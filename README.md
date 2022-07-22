@@ -10,7 +10,7 @@ The scope of this project is to port the algorithm into Python, as well as tinke
 ## How it Works
 
 Broadly, the algorithm works as follows:
-1. Given an input image, divide it up into N x N patterns of tiles (for most cases, a tile will be a pixel. however, given larger image inputs it may be better practice to have a tile be a 2 x 2 grid of pixels)
+1. Given an input image, divide it up into N x N patterns of tiles (for most cases, a tile will be a pixel. however, given larger image inputs it may be better practice to have a tile be a 2 x 2 grid of pixels). For example, if the size of the input image is 10 x 10, a tile is a pixel, and N x N, the image will be divided up into 25 2 x 2 patterns (assuming that all patterns are unique).
 2. Create an array of a desired output dimension (which we will call a 'wave'). Each element in the array represents the *state* of a N x N region in the output. The *state* is a superposition of all possible N x N patterns that may exist, expressed in terms of boolean coefficients. So for example, if there are 9 different N x N patterns in total, the states would be a list of 9 booleans describing whether the corresponding pattern is allowed or forbidden in that particular element of the grid. 
 3. Initialize the array in a completely unobserved state (all boolean coefficients are default set to False)
 4. Repeat through the following steps
