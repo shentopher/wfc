@@ -51,16 +51,40 @@ class Solver():
             raise Contradiction("Not feasible")
         if self.backtracking:
             self.history.append(self.wave.copy())
+
         propagate(self.wave, self.adj, self.periodic, self.on_propogate)
+
         try:
             pattern, i, j = observe(self.wave, location_heuristic, pattern_heuristic)
         except Contradiction:
-            pass
+            if not self.backtracking:
+                raise
+            if not self.history:
+                raise Contradiction("Every permutation has been attempted.")
+            if self.on_backtrack:
+                self.on_backtrack
+            # remove latest step
+            self.wave = self.history.pop()
+            self.wave[pattern, i, j] = False
+            return False
 
 
-# auxiliary functions
-def propagate():
-    pass
+
+# auxiliary functions for Solver Class
+def propagate(wave, adj, periodic=False, onPropagate=None) -> None:
+    # completely propogate result of collapse to the rest of the wave
+    last_count = wave.sum()
+
+    while True:
+        supports = {}
+        
+
+    if onPropagate:
+        onPropagate(wave)
+    
+    if (wave.sum(axis=0) == 0).any():
+        raise Contradiction("Wave cannot be solved")
+
 
 def observe():
     pass
