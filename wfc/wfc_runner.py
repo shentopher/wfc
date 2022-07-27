@@ -4,6 +4,7 @@ import numpy as np
 from typing import Dict, Tuple, List, Set
 import datetime
 from numpy.typing import NDArray
+import time
 
 # local imports
 from wfc_tiling import catalog_tiles
@@ -87,6 +88,7 @@ def runner_main(filename:str,
     while attempt < attempt_limit:
         attempt += 1
         print("Starting Attempt " + str(attempt) + "...")
+        time_start = time.perf_counter()
 
         stats = {}
         

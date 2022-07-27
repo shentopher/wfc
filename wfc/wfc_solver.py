@@ -1,12 +1,43 @@
 from __future__ import annotations
+from turtle import back
 
 from numpy.typing import NDArray
 import numpy as np
 from typing import *
 from scipy import sparse
 
-def run() -> NDArray[np.int64]:
-    pass
+def run(
+    wave,
+    adj,
+    locationHeuristic,
+    patternHeuristic,
+    periodic=False,
+    backtracking=False,
+    onBacktrack=None,
+    onChoice=None,
+    onObserve=None,
+    onPropagate=None,
+    checkFeasible=None,
+    onFinal=None,
+    depth=0,
+    depth_limit=0
+) -> NDArray[np.int64]:
+    solver = Solver(
+        wave=wave,
+        adj=adj,
+        periodic=periodic,
+        backtracking=backtracking,
+        on_backtrack=onBacktrack,
+        on_choice=onChoice,
+        on_observe=onObserve,
+        on_propogate=onPropagate,
+        check_feasible=checkFeasible
+    )
+    while not solver.solve_next(locationHeuristic, patternHeuristic):
+        pass
+    if onFinal:
+        onFinal(solver.wave)
+    return np.argmax(solver.wave, axis=0)
 
 class Solver():
     # main solving class
@@ -77,7 +108,28 @@ def propagate(wave, adj, periodic=False, onPropagate=None) -> None:
 
     while True:
         supports = {}
+        if periodic:
+            padded = np.pad(wave, ((0, 0), (1, 1), (1, 1)), mode="wrap")
+        else:
+            padded = np.pad(wave, ((0, 0), (1, 1), (1, 1)), mode="constant", constant_values=True)
+
+        # adj is a list of adjacencies. For each adjacency, check which is still valid
+        for d in adj:
+            dx, dy = d
+            shifted = padded[
+                :, 
+                1 + dx : 1 + wave.shape[1] + dx, 
+                1 + dy : 1 + wave.shape[2] + dy
+            ]
         
+        supports[d] = (adj[d] @ shifted.reshape(shifted.shape[0], -1)).reshape(shifted.shape) > 0
+
+        for d in adj:
+            wave *= supports[d]
+        
+        if wave.sum() == last_count:
+            break
+        last_count = wave.sum()
 
     if onPropagate:
         onPropagate(wave)
@@ -86,8 +138,11 @@ def propagate(wave, adj, periodic=False, onPropagate=None) -> None:
         raise Contradiction("Wave cannot be solved")
 
 
-def observe():
-    pass
+def observe(wave, locationHeuristic, patternHeuristic) -> Tuple[int, int, int]:
+    # returns the next best element in the wave to collapse
+    i, j = locationHeuristic(wave)
+    pattern = patternHeuristic(wave[:, i, j], wave)
+    return pattern, i, j
 
 # initialization methods
 def makeWave(number_of_patterns: int, width: int, height: int, ground=None):
