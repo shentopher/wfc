@@ -86,3 +86,11 @@ def unique_patterns(grid: NDArray[np.int64], stride: int, periodic_input: bool) 
     ids: NDArray[np.int64] = np.vectorize({code: ind for ind, code in enumerate(unique_hashes)}.get)(patch_hashes)
 
     return ids, up, patch_hashes
+
+def pattern_grid_to_tiles(pattern_grid, pattern_catalog) -> NDArray[np.int64]:
+    anchor_x, anchor_y = 0, 0
+
+    def pattern_to_tile(pattern):
+        return pattern_catalog[pattern][anchor_x][anchor_y]
+
+    return np.vectorize(pattern_to_tile)(pattern_grid)

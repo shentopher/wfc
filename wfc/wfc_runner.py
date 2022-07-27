@@ -5,20 +5,23 @@ from typing import Dict, Tuple, List, Set
 import datetime
 from numpy.typing import NDArray
 import time
+from wfc.wfc_solver import StopEarly
 
 # local imports
 from wfc_tiling import catalog_tiles
-from wfc_pattern import make_pattern_catalog
+from wfc_pattern import make_pattern_catalog, pattern_grid_to_tiles
 from wfc_adjacency import extract_adjacency
-from wfc_solver import makeWave, makeAdj
+from wfc_solver import makeWave, makeAdj, run, StopEarly, TimedOut, Contradiction
+from wfc_heuristics import makeWeightedPatternHeuristic, makeEntropyLocationHeuristic
+from wfc_output import render_tiles_to_output
 
 def runner_main(filename:str, 
                 tile_size:int = 1,
                 pattern_size:int = 2,
                 output_size=[48,48],
-                loc_heuristics="entropy",
+                loc_heuristic="entropy",
                 choice_heuristic="weighted",
-                attempt_limit=10
+                attempt_limit=10,
                 ):
     
     # define constatns
@@ -71,32 +74,78 @@ def runner_main(filename:str,
         encoded_weights[encode_patterns[weight_id]] = weight_val
     choice_random_weighting: NDArray[np.float64] = np.random.random_sample(wave.shape[1:]) * 0.1
 
+    if choice_heuristic == "weighted":
+        pattern_heuristic = makeWeightedPatternHeuristic(encoded_weights)
+
+    if loc_heuristic == "entropy":
+        location_heuristic = makeEntropyLocationHeuristic(choice_random_weighting)
+    
     # Constraints 
     active_global_constraints = lambda wave: True
     combined_constraints = [active_global_constraints]
     def combinedConstraints(wave: NDArray[np.bool_]) -> bool:
         # basically returns True in our implementatoin
-        # setting up a framework for additional global constraints though
+        # currently just sets a framework for additional global constraints
         return all(fn(wave) for fn in combined_constraints)
     
     # Solve WFC
-    start_solve_time = None
-    end_solve_time = None
+    time_start = None
+    time_end = None
 
-    attempt = 0
+    attempts = 0
 
-    while attempt < attempt_limit:
-        attempt += 1
-        print("Starting Attempt " + str(attempt) + "...")
+    while attempts < attempt_limit:
+        attempts += 1
+        print("Starting Attempt " + str(attempts) + "...")
         time_start = time.perf_counter()
-
-        stats = {}
         
         try:
-            pass
+            solution = run(
+                wave.copy(),
+                adjacency_matrix,
+                location_heuristic,
+                pattern_heuristic,
+                periodic=True,
+                backtracking=False,
+                onChoice=None,
+                onBacktrack=None,
+                onObserve=None,
+                onPropagate=None,
+                onFinal=None,
+                checkFeasible=combinedConstraints
+            )
+            solution_as_ids = np.vectorize(lambda x: decode_patterns[x])(solution)
+            solution_tile_grid = pattern_grid_to_tiles(solution_as_ids, pattern_catalog)
+
+            render_tiles_to_output(
+                solution_tile_grid,
+                tile_dictionary,
+                (tile_size, tile_size),
+                output_folder+filename+"_"+timecode+".png"
+            )
+
+            time_end = time.perf_counter()
+            print("Attempt " + str(attempts) + " Successful: " + str(timecode))
+
+        except StopEarly:
+            print("Stopping Early")
+            raise
+        except TimedOut:
+            print("Timed Out")
+        except Contradiction as exc:
+            print("Contradiction")
 
         finally:
-            pass
+            out_stats = {
+                "attempts": attempts,
+                "time_start": time_start,
+                "time_end": time_end,
+                "pattern_count": number_of_patterns
+            }
+
+            print(out_stats)
+
+            return out_stats
 
 
 def load_image(filename, input_folder):
@@ -108,6 +157,5 @@ def load_image(filename, input_folder):
 
 # for testing purposes
 if __name__ == '__main__':
-    # flowers is 23 by 15 by 3
     image_name = "Town"
     runner_main(image_name)
