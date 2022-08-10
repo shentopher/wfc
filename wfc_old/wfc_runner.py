@@ -5,7 +5,6 @@ from typing import Dict, Tuple, List, Set
 import datetime
 from numpy.typing import NDArray
 import time
-from wfc.wfc_solver import StopEarly
 
 # local imports
 from wfc_tiling import catalog_tiles
@@ -157,5 +156,5 @@ def load_image(filename, input_folder):
 
 # for testing purposes
 if __name__ == '__main__':
-    image_name = "Town"
+    image_name = "Skyline2"
     runner_main(image_name)

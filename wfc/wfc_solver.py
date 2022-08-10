@@ -1,177 +1,198 @@
-from __future__ import annotations
-from turtle import back
-
-from numpy.typing import NDArray
+from random import randint
+from typing import Tuple
 import numpy as np
-from typing import *
-from scipy import sparse
+import random
+import sys
 
-def run(
-    wave,
-    adj,
-    locationHeuristic,
-    patternHeuristic,
-    periodic=False,
-    backtracking=False,
-    onBacktrack=None,
-    onChoice=None,
-    onObserve=None,
-    onPropagate=None,
-    checkFeasible=None,
-    onFinal=None,
-    depth=0,
-    depth_limit=0
-) -> NDArray[np.int64]:
-    solver = Solver(
-        wave=wave,
-        adj=adj,
-        periodic=periodic,
-        backtracking=backtracking,
-        on_backtrack=onBacktrack,
-        on_choice=onChoice,
-        on_observe=onObserve,
-        on_propogate=onPropagate,
-        check_feasible=checkFeasible
-    )
-    while not solver.solve_next(locationHeuristic, patternHeuristic):
-        pass
-    if onFinal:
-        onFinal(solver.wave)
-    return np.argmax(solver.wave, axis=0)
+from wfc_exceptions import Contradiction, TimedOut, StopEarly
+from wfc_adjacency import make_adj
 
-class Solver():
-    # main solving class
-    def __init__(
-        self,
-        *,
-        wave: NDArray[np.bool_],
-        adj: Mapping[Tuple[int, int], NDArray[np.bool_]],
-        periodic: bool = False,
-        backtracking: bool = False,
-        on_backtrack: Optional[Callable[[], None]] = None,
-        on_choice: Optional[Callable[[int, int, int], None]] = None,
-        on_observe: Optional[Callable[[NDArray[np.bool_]], None]] = None,
-        on_propogate: Optional[Callable[[NDArray[np.bool_]], None]] = None,
-        check_feasible: Optional[Callable[[NDArray[np.bool_]], bool]] = None,
-    ) -> None:
-        self.wave =wave
-        self.adj = adj
-        self.periodic = periodic
-        self.backtracking = backtracking
-        self.on_backtrack = on_backtrack
-        self.on_choice = on_choice
-        self.on_observe = on_observe
-        self.on_propogate = on_propogate
-        self.check_feasible = check_feasible
-        self.history: List[NDArray[np.bool_]] = []
-
-    def solve(self, location_heuristic, pattern_heuristic) -> NDArray[np.int64]:
-        while not self.solve_next(location_heuristic, pattern_heuristic):
-            pass
-        return np.argmax(self.wave, axis=0)
-
-    def is_solved(self) -> bool:
-        # returns true if wave has been solved
-        return self.wave.sum() == self.wave.shape[1] * self.wave.shape[2] and (self.wave.sum(axis=0) == 1).all()
-
-    def solve_next(self, location_heuristic, pattern_heuristic) -> bool:
-        # returns true if no more steps remain
-        if self.is_solved:
-            return True
-        if self.check_feasible and not self.check_feasible(self.wave):
-            raise Contradiction("Not feasible")
-        if self.backtracking:
-            self.history.append(self.wave.copy())
-
-        propagate(self.wave, self.adj, self.periodic, self.on_propogate)
-
-        try:
-            pattern, i, j = observe(self.wave, location_heuristic, pattern_heuristic)
-        except Contradiction:
-            if not self.backtracking:
-                raise
-            if not self.history:
-                raise Contradiction("Every permutation has been attempted.")
-            if self.on_backtrack:
-                self.on_backtrack
-            # remove latest step
-            self.wave = self.history.pop()
-            self.wave[pattern, i, j] = False
-            return False
-
-
-
-# auxiliary functions for Solver Class
-def propagate(wave, adj, periodic=False, onPropagate=None) -> None:
-    # completely propogate result of collapse to the rest of the wave
-    last_count = wave.sum()
-
-    while True:
-        supports = {}
-        if periodic:
-            padded = np.pad(wave, ((0, 0), (1, 1), (1, 1)), mode="wrap")
-        else:
-            padded = np.pad(wave, ((0, 0), (1, 1), (1, 1)), mode="constant", constant_values=True)
-
-        # adj is a list of adjacencies. For each adjacency, check which is still valid
-        for d in adj:
-            dx, dy = d
-            shifted = padded[
-                :, 
-                1 + dx : 1 + wave.shape[1] + dx, 
-                1 + dy : 1 + wave.shape[2] + dy
-            ]
-        
-        supports[d] = (adj[d] @ shifted.reshape(shifted.shape[0], -1)).reshape(shifted.shape) > 0
-
-        for d in adj:
-            wave *= supports[d]
-        
-        if wave.sum() == last_count:
-            break
-        last_count = wave.sum()
-
-    if onPropagate:
-        onPropagate(wave)
-    
-    if (wave.sum(axis=0) == 0).any():
-        raise Contradiction("Wave cannot be solved")
-
-
-def observe(wave, locationHeuristic, patternHeuristic) -> Tuple[int, int, int]:
-    # returns the next best element in the wave to collapse
-    i, j = locationHeuristic(wave)
-    pattern = patternHeuristic(wave[:, i, j], wave)
-    return pattern, i, j
-
-# initialization methods
-def makeWave(number_of_patterns: int, width: int, height: int, ground=None):
-    wave = np.ones((number_of_patterns, width, height), dtype=np.bool_)
+"""
+@inputs: pattern_list, which is a list of all unique hashed patterns
+         output_size, a tuple of the number of horiz and vertical elements in the output image
+@outputs: wave, an 3DNDarray of Booleans with x dim, y dim, and number of patterns as z-axis. Default initializes to all True
+"""
+def make_wave(unique_patterns, output_size):
+    xdim, ydim = output_size
+    number_of_patterns = len(unique_patterns)
+    wave = np.ones(shape=(xdim, ydim, number_of_patterns), dtype=bool)
     return wave
 
-def makeAdj(adjLists: Mapping[Tuple[int, int], Collection[Iterable[int]]]):
-    adjMatrices = {}
-    num_patterns = len(list(adjLists.values())[0])
+def run(wave, floor, adjacency_information):
+    pattern_list = sorted(list(adjacency_information.keys()))
 
-    for d in adjLists:
-        mat = np.zeros((num_patterns, num_patterns), dtype=bool)
-        for i, js in enumerate(adjLists[d]):
-            for j in js:
-                mat[i, j] = 1
-        adjMatrices[d] = sparse.csr_matrix(mat)
-    return adjMatrices
+    solver = Solver(wave=wave, adjacency_information=adjacency_information, pattern_list=pattern_list, floor=floor)
 
-# Exceptions
-class Contradiction(Exception):
-    """Solving could not proceed without backtracking/restarting."""
-    pass
+    print("Init wave sum " + str(wave.sum()))
+
+    print("Collapse First Elem")
+    solver.collapse_first_elem()
+
+    solve_counter = 0
+    while not solver.solve_next():
+        solve_counter += 1
+        print("Current Solve Counter " + str(solve_counter))
+        pass
+    
+    print("yes wave is solved")
+    collapsed_wave = np.argmax(solver.wave, axis=2)
+    print(collapsed_wave)
+
+    return collapsed_wave
 
 
-class TimedOut(Exception):
-    """Solve timed out."""
-    pass
+class Solver():
+    def __init__(self, wave, adjacency_information, pattern_list, floor) -> None:
+        self.adjacency_information = adjacency_information
+        self.pattern_list = pattern_list
+        self.floor = floor
+        self.solved_count = 0
+        self.wave = wave
+
+    def solve_next(self):
+        # check that we continue with solving
+        if self.is_solved():
+            print("Is Solved")
+            return True
+        if not self.check_solvable():
+            print("Not Solvable")
+            raise Contradiction("Not Solvable")
+        
+        # observe and then propogate next
+        try:
+            a0, a1 = observe_next(self.wave, self.pattern_list)
+
+            print("Next best pos " + str((a0, a1)))
+            stack = []
+            stack.append((a0, a1))
+
+            propogate(self.wave, stack, self.adjacency_information, self.pattern_list)
+
+            return False # returning false continues the loop
+        except:
+            return False
+
+    def is_solved(self):
+        if (self.wave.sum(axis=2) != 1).any():
+            return False
+        return True
+    
+    def check_solvable(self):
+        if (self.wave.sum(axis=2) == 0).any():
+            return False
+        return True
+    
+    def collapse_first_elem(self):
+        axis0dim, axis1dim, _ = self.wave.shape
+        rand_axis1 = randint(0, axis1dim-1)
+
+        if self.floor:
+            rand_axis0 = axis0dim - 1
+            possible_floor_patterns = set()
+            for key, value in self.adjacency_information.items():
+                if len(value["SOUTH"]) == 0:
+                    possible_floor_patterns.add(key)
+            collapse_to_pattern = random.choice(tuple(possible_floor_patterns))
+
+        else:
+            rand_axis0 = randint(0, axis0dim-1)
+            collapse_to_pattern = random.choice(list(self.adjacency_information.keys()))
+
+        idx = self.pattern_list.index(collapse_to_pattern)
+        self.wave[rand_axis0, rand_axis1, :] = False
+        self.wave[rand_axis0, rand_axis1, idx] = True
+
+        stack = []
+        stack.append((rand_axis0, rand_axis1))
+
+        propogate(self.wave, stack, self.adjacency_information, self.pattern_list)
+
+def propogate(wave, stack, adjacency_information, pattern_list):
+    while len(stack) > 0:
+        a0, a1 = stack.pop()
+        xdim, ydim, zdim = wave.shape
+        sl = wave[a0, a1, :]
+        possible_patterns = np.where(sl == True)[0]
+
+        for dir_ in valid_dirs((a0, a1), xdim, ydim):
+            adj_sl = wave[a0 + dir_[0], a1 + dir_[1], :]
+            adj_possible_patterns = np.where(adj_sl == True)[0]
+    
+            for adj_pattern in adj_possible_patterns:
+                if len(possible_patterns) > 1:
+                    is_possible = any(check_possibility(pattern, adj_pattern, adjacency_information, pattern_list, dir_) for pattern in possible_patterns)
+                else:
+                    is_possible = check_possibility(list(possible_patterns), adj_pattern, adjacency_information, pattern_list, dir_)
+
+                # if this adjacent pattern is not possible for any of the given possible patterns in the current wave
+                # then it needs to be set to False
+                if not is_possible:
+                    adj_pos = (a0 + dir_[0],  a1 + dir_[1])
+                    n_a0, n_a1 = adj_pos
+                    
+                    wave[n_a0, n_a1, adj_pattern] = False
+
+                    if adj_pos not in stack:
+                        stack.append(adj_pos)
+
+def check_possibility(pattern, adj_pattern, adj_information, pattern_list, direction):
+    if isinstance(pattern, list):
+        pattern = pattern[0]
+    
+    dirs = ["NORTH", "SOUTH", "EAST", "WEST"]
+    dims = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+    alpha_dir = dirs[dims.index(direction)]
+    return pattern_list[adj_pattern] in adj_information[pattern_list[pattern]][alpha_dir]
 
 
-class StopEarly(Exception):
-    """Aborting solve early."""
-    pass
+def valid_dirs(pos, xdim, ydim):
+    a0, a1 = pos
+
+    dims = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    valid_dirs = list()
+    for dim in dims:
+            delta_x, delta_y = dim
+            if (a0 + delta_x >= 0) and (a0 + delta_x < xdim):
+                if (a1 + delta_y >= 0) and (a1 + delta_y < ydim):
+                    valid_dirs.append(dim)
+    
+    return valid_dirs
+
+    
+def observe_next(wave, pattern_list):
+    # first, find the element that has the least possible superpositions
+    sums = np.sum(wave, axis=2)
+
+    min_elem = sys.maxsize
+    min_index_set = set()
+
+    for a0_idx, row in enumerate(sums):
+        for a1_idx, elem in enumerate(row):
+            if elem < min_elem and elem > 1:
+                min_elem = elem
+                min_index_set = set()
+                min_index_set.add((a0_idx, a1_idx))
+            if elem == min_elem:
+                min_index_set.add((a0_idx, a1_idx))
+    
+    min_elem = random.choice(list(min_index_set))
+
+    # within that element, choose a random pattern to collapse to
+    min_a0, min_a1 = min_elem
+    a2_sl = wave[min_a0, min_a1, :]
+
+    possible_pattern_idxs = list()
+    for i, j in enumerate(a2_sl):
+        if j:
+            possible_pattern_idxs.append(i)
+
+    pattern_idx = random.choice(possible_pattern_idxs)
+    
+    # then do the actual collapsing
+    wave[min_a0, min_a1, :] = False
+    wave[min_a0, min_a1, pattern_idx] = True
+
+    return min_a0, min_a1
+
+

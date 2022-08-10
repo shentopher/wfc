@@ -1,68 +1,92 @@
+from wfc_hashing import hash_pattern
 """
-Take pattern information and identify adjacencies
+@params: pattern_catalog, which has (x, y) as key and NDArray pattern as value
+@returns: adjacency_information, dictionary
+    key is hashed pattern
+    value is a dictionary with four keys: North, South, East, West. The value for each key is a set of adjacent patterns
 """
+def get_adjacencies(pattern_catalog, xtiles, ytiles):
+    adjacency_information = dict()
 
-from typing import Dict, List, Tuple
-from numpy.typing import NDArray
-import numpy as np
+    for key, pattern in pattern_catalog.items():
+        x, y = key
 
-"""
-@params:
-pattern_grid
-pattern_dictionary
-direction offsets
-pattern_size
-@outputs
-legal -> List[Tuple[Tuple[int, int], int, int]]: direction tuple, pattern1 hash, pattern2 hash
-"""
-def extract_adjacency(pattern_grid: NDArray[np.int64], pattern_dictionary: Dict[int, NDArray[np.int64]], direction_offsets: List[Tuple[int, Tuple[int, int]]],
-    pattern_size: Tuple[int, int] = (2, 2),):
+        pattern = hash_pattern(pattern)
 
-    legal = [] 
-    patterns = list(pattern_dictionary.keys())
+        NORTH = ("NORTH", None)
+        SOUTH = ("SOUTH", None)
+        EAST = ("EAST", None)
+        WEST = ("WEST", None)
+        
+        if x - 1 >= 0:
+            N_CORD = (x - 1, y)
+            NORTH = ("NORTH", hash_pattern(pattern_catalog[N_CORD]))
+        if x + 1 < ytiles:
+            S_CORD = (x + 1, y)
+            SOUTH = ("SOUTH", hash_pattern(pattern_catalog[S_CORD]))
+        if y - 1 >= 0:
+            E_CORD = (x, y - 1)
+            EAST = ("EAST", hash_pattern(pattern_catalog[E_CORD]))
+        if y + 1 < xtiles:
+            W_CORD = (x, y + 1)
+            WEST = ("WEST", hash_pattern(pattern_catalog[W_CORD]))
 
-    for pattern1 in patterns:
-        for pattern2 in patterns:
-            for _, direction in direction_offsets:
-                if matching_over_intersection(direction, pattern1, pattern2, pattern_dictionary, pattern_size):
-                    legal.append((direction, pattern1, pattern2))
+        directions = [NORTH, SOUTH, EAST, WEST]
 
-    return legal
+        if pattern in adjacency_information.keys():
+            pattern_information = adjacency_information[pattern]
+            for direction, adj_pattern in directions:
+                if adj_pattern is not None:
+                    adjacencies = pattern_information[direction]
+                    adjacencies.add(adj_pattern)
+                    pattern_information.update({direction : adjacencies})
+            adjacency_information[pattern] = pattern_information
 
-"""
-Determins if two patterns form a valid intersection
-@params
-adjacency_directions: a tuple of integers specifiying pattern matching directions
-pattern1
-pattern2
-pattern catalog
-pattern size
-@outputs
-res: a boolean for whether a valid intersection exists
-"""
-def matching_over_intersection(adjacency_direction, pattern1, pattern2, pattern_catalog, pattern_size):
-    dimensions = (1, 0)
+        else:
+            pattern_information = dict()
+            for direction, adj_pattern in directions:
+                adjs = set()
 
-    pad = np.pad(pattern_catalog[pattern2], max(pattern_size), mode="constant", constant_values=-1)
-    shifted = np.roll(a=pad, shift=adjacency_direction, axis=dimensions)
+                if adj_pattern is not None:
+                    adjs.add(adj_pattern)
+                pattern_information[direction] = adjs
 
-    # ex. shifted[2:4] gives a slice
-    compare = shifted[
-        pattern_size[0] : pattern_size[0] + pattern_size[0],
-        pattern_size[1] : pattern_size[1] + pattern_size[1]
-    ]
-
-    left = max(0, 0 + adjacency_direction[0])
-    right = min(pattern_size[0], pattern_size[0] + adjacency_direction[0])
-
-    top = max(0, 0 + adjacency_direction[1])
-    bottom = min(pattern_size[1], pattern_size[1] + adjacency_direction[1])
-
-    a = pattern_catalog[pattern1][top:bottom, left:right]
-    b = compare[top:bottom, left:right]
-
-    res = np.array_equal(a, b)
-
-    return res
+            adjacency_information[pattern] = pattern_information
+        
+    return adjacency_information
 
 
+def make_adj(adjacency_information, pattern_list):
+    # preprocessing
+    direction_dict = {
+        "NORTH" : (-1, 0),
+        "SOUTH" : (1, 0),
+        "WEST" : (0, -1),
+        "EAST" : (0, 1)
+    }
+
+    adjacency_relations = list()
+
+    for pattern1, value in adjacency_information.items():
+        for direction, patterns in value.items():
+            for pattern2 in patterns:
+                pdir = direction_dict.get(direction)
+                pattern1_idx = pattern_list.index(pattern1)
+                pattern2_idx = pattern_list.index(pattern2)
+                
+                adjacency_relations.append((pdir, pattern1_idx, pattern2_idx))
+    
+    # more preprocessing
+
+    adjacency_list = list()
+
+    for direction, _ in direction_dict.items():
+        adjacency_list[direction] = [set() for _ in pattern_list]
+    
+    for adjacency, pattern1_idx, pattern2_idx in adjacency_relations:
+        adjacency_list[adjacency][pattern1_idx].add(pattern2_idx)
+    
+    # The adjacency matrix is a boolean matrix, indexed by the direction and the two patterns.
+    # If the value for (direction, pattern1, pattern2) is True, then this is a valid adjacency.
+
+    

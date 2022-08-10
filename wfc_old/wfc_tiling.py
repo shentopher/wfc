@@ -46,19 +46,21 @@ tilesize (N for N x N tile)
 tiles (an NDArray of tiles)
 """
 def image_to_tiles(img: NDArray[np.integer], tile_size: int) -> NDArray[np.integer]:
-    pad_width = [(0, 0), (0, 0), (0, 0)]
-
-    #  pad of the x and y axes (only after, not before)
-    for dimension in [0, 1]:
-        padding_size = (tile_size - img.shape[dimension]) % tile_size 
-        padding_tuple = (0, padding_size)
-        pad_width[dimension] = padding_tuple
-    img = np.pad(array=img, pad_width=pad_width, mode="constant")
-
-    # employ np.reshape inorder to break padded image into constituent tiles
-    newshape = (img.shape[0] // tile_size, tile_size, img.shape[1] // tile_size, tile_size, img.shape[2])
-    tiles = img.reshape(newshape)
-    tiles = tiles.swapaxes(1,2)
-
+    padding_argument = [(0, 0), (0, 0), (0, 0)]
+    for input_dim in [0, 1]:
+        padding_argument[input_dim] = (
+            0,
+            (tile_size - img.shape[input_dim]) % tile_size,
+        )
+    img = np.pad(img, padding_argument, mode="constant")
+    tiles = img.reshape(
+        (
+            img.shape[0] // tile_size,
+            tile_size,
+            img.shape[1] // tile_size,
+            tile_size,
+            img.shape[2],
+        )
+    ).swapaxes(1, 2)
     return tiles
 
