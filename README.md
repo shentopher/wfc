@@ -3,7 +3,7 @@
 **Author**: Christopher Shen | **Affiliation**: University of Pennsylvania | **Email**: christophershen32@gmail.com
 
 ## Introduction
-Wave Function Collapse (WFC) is a beautoful example-driven image generation algorithm. It was devised by Maxim Gumin and employed by the likes of Oskar Stålberg for procedural world and image generation. The algorithm draws inspiration from the quantum physics concept of the same name, which describes the 'collapse' of a wave function from a superposition of eigenstates into a single eigenstate. 
+Wave Function Collapse (WFC) is a beautiful example-driven image generation algorithm. It was devised by Maxim Gumin and employed by the likes of Oskar Stålberg for procedural world and image generation. The algorithm draws inspiration from the quantum physics concept of the same name, which describes the 'collapse' of a wave function from a superposition of eigenstates into a single eigenstate. 
 
 The scope of this project is to port the algorithm into Python and use it for simple procedural generation tasks.
 
